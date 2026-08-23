@@ -18,12 +18,13 @@ type MultiResult = {
 
 type FoundItem = {
   username: string
-  availableOn: string[] // platform keys
+  availableOn: string[]
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
   github: 'GitHub',
   reddit: 'Reddit',
+  discord: 'Discord',
   youtube: 'YouTube',
   twitch: 'Twitch',
   steam: 'Steam',
@@ -36,13 +37,12 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [multiResult, setMultiResult] = useState<MultiResult | null>(null)
 
-  // Auto finder
   const [autoLength, setAutoLength] = useState(5)
   const [autoCount, setAutoCount] = useState(10)
   const [autoLoading, setAutoLoading] = useState(false)
   const [foundList, setFoundList] = useState<FoundItem[]>([])
   const [checkedCount, setCheckedCount] = useState(0)
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['github', 'reddit'])
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['github', 'reddit', 'discord'])
 
   const togglePlatform = (p: string) => {
     setSelectedPlatforms((prev) =>
@@ -66,6 +66,8 @@ export default function Home() {
   }
 
   const generateRandom = (len: number) => {
+    // Discord-friendly: lowercase letters, numbers, underscore, period
+    // For simplicity keep alphanumeric for all platforms
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
     let s = ''
     for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)]
@@ -78,7 +80,7 @@ export default function Home() {
     setFoundList([])
     setCheckedCount(0)
     const found: FoundItem[] = []
-    const maxTry = Math.min(autoCount, 30) // multi-platform so lower limit
+    const maxTry = Math.min(autoCount, 25)
 
     for (let i = 0; i < maxTry; i++) {
       const candidate = generateRandom(autoLength)
@@ -95,7 +97,8 @@ export default function Home() {
           found.push({ username: candidate, availableOn })
           setFoundList([...found])
         }
-        await new Promise((r) => setTimeout(r, 400))
+        // Longer delay to reduce rate limit risk
+        await new Promise((r) => setTimeout(r, 600))
       } catch {}
     }
     setAutoLoading(false)
@@ -113,7 +116,6 @@ export default function Home() {
           </p>
         </header>
 
-        {/* 一括チェック */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4">ユーザー名チェック</h2>
           <div className="flex gap-3">
@@ -157,12 +159,15 @@ export default function Home() {
                     <div>
                       <div className="font-medium">{PLATFORM_LABELS[r.platform] || r.platform}</div>
                       <div className="text-sm text-gray-500">{r.username}</div>
+                      {r.error && (
+                        <div className="text-xs text-orange-500 mt-0.5">{r.error}</div>
+                      )}
                     </div>
                     <div className="text-right">
                       {r.available === true && <span className="text-green-700 font-semibold">空き</span>}
                       {r.available === false && <span className="text-red-600 font-semibold">使用中</span>}
                       {r.available === null && <span className="text-gray-400">不明</span>}
-                      {r.url && (
+                      {r.url && r.platform !== 'discord' && (
                         <a
                           href={r.url}
                           target="_blank"
@@ -180,14 +185,12 @@ export default function Home() {
           )}
         </section>
 
-        {/* 自動空きID探し */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-xl font-semibold mb-2">自動空きID探し</h2>
           <p className="text-sm text-gray-500 mb-4">
-            ランダムにIDを生成して、選択したプラットフォームで空きがあるものを探します。
+            ランダムにIDを生成して、選択したプラットフォームで空きがあるものを探します。レート制限対策で間隔を空けています。
           </p>
 
-          {/* プラットフォーム選択 */}
           <div className="mb-4">
             <div className="text-sm text-gray-600 mb-2">チェックするプラットフォーム</div>
             <div className="flex flex-wrap gap-2">
@@ -229,7 +232,7 @@ export default function Home() {
                 onChange={(e) => setAutoCount(Number(e.target.value))}
                 className="px-3 py-2 border rounded-lg"
               >
-                {[5, 10, 15, 20, 30].map((n) => (
+                {[5, 10, 15, 20, 25].map((n) => (
                   <option key={n} value={n}>
                     {n}回
                   </option>
@@ -278,7 +281,7 @@ export default function Home() {
         </section>
 
         <footer className="mt-10 text-center text-sm text-gray-400">
-          対応: GitHub / Reddit / YouTube / Twitch / Steam · 今後も追加予定
+          対応: GitHub / Reddit / Discord / YouTube / Twitch / Steam · キャッシュ付きでレート制限対策中
         </footer>
       </div>
     </main>
