@@ -26,6 +26,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   reddit: 'Reddit',
   discord: 'Discord',
   youtube: 'YouTube',
+  gitlab: 'GitLab',
+  hackernews: 'Hacker News',
   twitch: 'Twitch',
   steam: 'Steam',
 }
@@ -42,7 +44,12 @@ export default function Home() {
   const [autoLoading, setAutoLoading] = useState(false)
   const [foundList, setFoundList] = useState<FoundItem[]>([])
   const [checkedCount, setCheckedCount] = useState(0)
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['github', 'reddit', 'discord'])
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
+    'github',
+    'reddit',
+    'discord',
+    'gitlab',
+  ])
 
   const togglePlatform = (p: string) => {
     setSelectedPlatforms((prev) =>
@@ -66,8 +73,6 @@ export default function Home() {
   }
 
   const generateRandom = (len: number) => {
-    // Discord-friendly: lowercase letters, numbers, underscore, period
-    // For simplicity keep alphanumeric for all platforms
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
     let s = ''
     for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)]
@@ -81,24 +86,27 @@ export default function Home() {
     setCheckedCount(0)
     const found: FoundItem[] = []
     const maxTry = Math.min(autoCount, 25)
+    const platformsQs = selectedPlatforms.join(',')
 
     for (let i = 0; i < maxTry; i++) {
       const candidate = generateRandom(autoLength)
       try {
-        const res = await fetch(`/api/check?username=${encodeURIComponent(candidate)}`)
+        const res = await fetch(
+          `/api/check?username=${encodeURIComponent(candidate)}&platforms=${platformsQs}`
+        )
         const data: MultiResult = await res.json()
         setCheckedCount(i + 1)
 
         const availableOn = data.results
-          .filter((r) => r.available === true && selectedPlatforms.includes(r.platform))
+          .filter((r) => r.available === true)
           .map((r) => r.platform)
 
         if (availableOn.length > 0) {
           found.push({ username: candidate, availableOn })
           setFoundList([...found])
         }
-        // Longer delay to reduce rate limit risk
-        await new Promise((r) => setTimeout(r, 600))
+        // レート制限対策で待機
+        await new Promise((r) => setTimeout(r, 700))
       } catch {}
     }
     setAutoLoading(false)
@@ -112,7 +120,7 @@ export default function Home() {
             Username Checker + Auto ID Finder
           </h1>
           <p className="text-gray-600">
-            複数プラットフォームでユーザー名の空き状況を一括チェック
+            8プラットフォーム対応 · キャッシュ & タイムアウト強化済み
           </p>
         </header>
 
@@ -188,7 +196,7 @@ export default function Home() {
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-xl font-semibold mb-2">自動空きID探し</h2>
           <p className="text-sm text-gray-500 mb-4">
-            ランダムにIDを生成して、選択したプラットフォームで空きがあるものを探します。レート制限対策で間隔を空けています。
+            選択したプラットフォームのみチェック（無駄なリクエストを削減）。レート制限対策で間隔を空けています。
           </p>
 
           <div className="mb-4">
@@ -281,7 +289,9 @@ export default function Home() {
         </section>
 
         <footer className="mt-10 text-center text-sm text-gray-400">
-          対応: GitHub / Reddit / Discord / YouTube / Twitch / Steam · キャッシュ付きでレート制限対策中
+          対応: GitHub / Reddit / Discord / YouTube / GitLab / Hacker News / Twitch / Steam
+          <br />
+          10分キャッシュ · タイムアウト付き · 選択プラットフォームのみチェック
         </footer>
       </div>
     </main>
