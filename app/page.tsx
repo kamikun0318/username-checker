@@ -2,21 +2,34 @@
 
 import { useState } from 'react'
 
-type CheckResult = {
-  available: boolean | null
+type PlatformResult = {
   platform: string
+  available: boolean | null
   username: string
-  profile?: { login: string; avatar: string; url: string }
+  url?: string
   error?: string
-  reason?: string
+}
+
+type MultiResult = {
+  username: string
+  results: PlatformResult[]
+  summary: { available: number; taken: number; unknown: number }
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  github: 'GitHub',
+  reddit: 'Reddit',
+  youtube: 'YouTube',
+  twitch: 'Twitch',
+  steam: 'Steam',
 }
 
 export default function Home() {
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<CheckResult | null>(null)
+  const [multiResult, setMultiResult] = useState<MultiResult | null>(null)
 
-  // Auto finder state
+  // Auto finder (still GitHub focused for now)
   const [autoLength, setAutoLength] = useState(5)
   const [autoCount, setAutoCount] = useState(10)
   const [autoLoading, setAutoLoading] = useState(false)
@@ -26,13 +39,13 @@ export default function Home() {
   const checkUsername = async () => {
     if (!username.trim()) return
     setLoading(true)
-    setResult(null)
+    setMultiResult(null)
     try {
-      const res = await fetch(`/api/check/github?username=${encodeURIComponent(username.trim())}`)
+      const res = await fetch(`/api/check?username=${encodeURIComponent(username.trim())}`)
       const data = await res.json()
-      setResult(data)
+      setMultiResult(data)
     } catch {
-      setResult({ available: null, platform: 'github', username, error: 'network_error' })
+      setMultiResult(null)
     } finally {
       setLoading(false)
     }
@@ -41,9 +54,7 @@ export default function Home() {
   const generateRandom = (len: number) => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
     let s = ''
-    for (let i = 0; i < len; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)]
-    }
+    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)]
     return s
   }
 
@@ -52,7 +63,7 @@ export default function Home() {
     setAvailableList([])
     setCheckedCount(0)
     const found: string[] = []
-    const maxTry = Math.min(autoCount, 50) // safety limit
+    const maxTry = Math.min(autoCount, 40)
 
     for (let i = 0; i < maxTry; i++) {
       const candidate = generateRandom(autoLength)
@@ -64,11 +75,8 @@ export default function Home() {
           found.push(candidate)
           setAvailableList([...found])
         }
-        // small delay to be gentle
-        await new Promise(r => setTimeout(r, 300))
-      } catch {
-        // skip
-      }
+        await new Promise(r => setTimeout(r, 250))
+      } catch {}
     }
     setAutoLoading(false)
   }
@@ -76,16 +84,16 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 to-white">
       <div className="max-w-3xl mx-auto px-4 py-12">
-        <header className="text-center mb-12">
-          <h1 className="text-3xl md:text-4xl font-bold text-indigo-700 mb-3">
+        <header className="text-center mb-10">
+          <h1 className="text-3xl md:text-4xl font-bold text-indigo-700 mb-2">
             Username Checker + Auto ID Finder
           </h1>
           <p className="text-gray-600">
-            ユーザー名の空き確認 & 自動で空きIDを探す（現在GitHub対応）
+            複数プラットフォームでユーザー名の空き状況を一括チェック
           </p>
         </header>
 
-        {/* 一括チェック（今はGitHubのみ） */}
+        {/* 一括チェック */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4">ユーザー名チェック</h2>
           <div className="flex gap-3">
@@ -106,26 +114,48 @@ export default function Home() {
             </button>
           </div>
 
-          {result && (
-            <div className="mt-6 p-4 rounded-xl border">
-              {result.available === true && (
-                <div className="text-green-700 font-medium">
-                  ✅ <strong>{result.username}</strong> は GitHub で<strong>空き</strong>です！
-                </div>
-              )}
-              {result.available === false && (
-                <div className="text-red-600">
-                  ❌ <strong>{result.username}</strong> は既に使われています
-                  {result.profile && (
-                    <a href={result.profile.url} target="_blank" rel="noreferrer" className="ml-2 text-indigo-600 underline">
-                      プロフィールを見る
-                    </a>
-                  )}
-                </div>
-              )}
-              {result.available === null && (
-                <div className="text-gray-500">確認できませんでした（{result.error || '不明'}）</div>
-              )}
+          {multiResult && (
+            <div className="mt-6">
+              <div className="flex gap-4 text-sm mb-4">
+                <span className="text-green-600 font-medium">空き {multiResult.summary.available}</span>
+                <span className="text-red-500 font-medium">使用中 {multiResult.summary.taken}</span>
+                <span className="text-gray-400">不明 {multiResult.summary.unknown}</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {multiResult.results.map((r) => (
+                  <div
+                    key={r.platform}
+                    className={`p-4 rounded-xl border flex items-center justify-between ${
+                      r.available === true
+                        ? 'bg-green-50 border-green-200'
+                        : r.available === false
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-medium">{PLATFORM_LABELS[r.platform] || r.platform}</div>
+                      <div className="text-sm text-gray-500">{r.username}</div>
+                    </div>
+                    <div className="text-right">
+                      {r.available === true && <span className="text-green-700 font-semibold">空き</span>}
+                      {r.available === false && <span className="text-red-600 font-semibold">使用中</span>}
+                      {r.available === null && <span className="text-gray-400">不明</span>}
+                      {r.url && (
+                        <a
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block text-xs text-indigo-600 mt-1 hover:underline"
+                        >
+                          見る
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -134,7 +164,7 @@ export default function Home() {
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-xl font-semibold mb-2">自動空きID探し（GitHub）</h2>
           <p className="text-sm text-gray-500 mb-4">
-            指定した文字数のランダムIDを生成して空きを探します。短いほど見つかりにくいです。
+            指定した文字数のランダムIDを生成して空きを探します。
           </p>
 
           <div className="flex flex-wrap gap-4 mb-4">
@@ -157,7 +187,7 @@ export default function Home() {
                 onChange={(e) => setAutoCount(Number(e.target.value))}
                 className="px-3 py-2 border rounded-lg"
               >
-                {[5, 10, 20, 30, 50].map((n) => (
+                {[5, 10, 20, 30, 40].map((n) => (
                   <option key={n} value={n}>{n}回</option>
                 ))}
               </select>
@@ -192,13 +222,13 @@ export default function Home() {
             </div>
           )}
 
-          {autoLoading === false && checkedCount > 0 && availableList.length === 0 && (
-            <p className="text-gray-500 mt-3">今回は空きが見つかりませんでした。文字数を増やすか、もう一度試してください。</p>
+          {!autoLoading && checkedCount > 0 && availableList.length === 0 && (
+            <p className="text-gray-500 mt-3">今回は空きが見つかりませんでした。</p>
           )}
         </section>
 
-        <footer className="mt-12 text-center text-sm text-gray-400">
-          GitHub + Vercel で構築中 · 今後プラットフォームを追加予定
+        <footer className="mt-10 text-center text-sm text-gray-400">
+          対応: GitHub / Reddit / YouTube / Twitch / Steam · 今後も追加予定
         </footer>
       </div>
     </main>
