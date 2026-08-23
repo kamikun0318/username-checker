@@ -16,6 +16,11 @@ type MultiResult = {
   summary: { available: number; taken: number; unknown: number }
 }
 
+type FoundItem = {
+  username: string
+  availableOn: string[] // platform keys
+}
+
 const PLATFORM_LABELS: Record<string, string> = {
   github: 'GitHub',
   reddit: 'Reddit',
@@ -24,17 +29,26 @@ const PLATFORM_LABELS: Record<string, string> = {
   steam: 'Steam',
 }
 
+const ALL_PLATFORMS = Object.keys(PLATFORM_LABELS)
+
 export default function Home() {
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [multiResult, setMultiResult] = useState<MultiResult | null>(null)
 
-  // Auto finder (still GitHub focused for now)
+  // Auto finder
   const [autoLength, setAutoLength] = useState(5)
   const [autoCount, setAutoCount] = useState(10)
   const [autoLoading, setAutoLoading] = useState(false)
-  const [availableList, setAvailableList] = useState<string[]>([])
+  const [foundList, setFoundList] = useState<FoundItem[]>([])
   const [checkedCount, setCheckedCount] = useState(0)
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['github', 'reddit'])
+
+  const togglePlatform = (p: string) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    )
+  }
 
   const checkUsername = async () => {
     if (!username.trim()) return
@@ -59,23 +73,29 @@ export default function Home() {
   }
 
   const runAutoFinder = async () => {
+    if (selectedPlatforms.length === 0) return
     setAutoLoading(true)
-    setAvailableList([])
+    setFoundList([])
     setCheckedCount(0)
-    const found: string[] = []
-    const maxTry = Math.min(autoCount, 40)
+    const found: FoundItem[] = []
+    const maxTry = Math.min(autoCount, 30) // multi-platform so lower limit
 
     for (let i = 0; i < maxTry; i++) {
       const candidate = generateRandom(autoLength)
       try {
-        const res = await fetch(`/api/check/github?username=${encodeURIComponent(candidate)}`)
-        const data = await res.json()
+        const res = await fetch(`/api/check?username=${encodeURIComponent(candidate)}`)
+        const data: MultiResult = await res.json()
         setCheckedCount(i + 1)
-        if (data.available === true) {
-          found.push(candidate)
-          setAvailableList([...found])
+
+        const availableOn = data.results
+          .filter((r) => r.available === true && selectedPlatforms.includes(r.platform))
+          .map((r) => r.platform)
+
+        if (availableOn.length > 0) {
+          found.push({ username: candidate, availableOn })
+          setFoundList([...found])
         }
-        await new Promise(r => setTimeout(r, 250))
+        await new Promise((r) => setTimeout(r, 400))
       } catch {}
     }
     setAutoLoading(false)
@@ -162,10 +182,30 @@ export default function Home() {
 
         {/* 自動空きID探し */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-xl font-semibold mb-2">自動空きID探し（GitHub）</h2>
+          <h2 className="text-xl font-semibold mb-2">自動空きID探し</h2>
           <p className="text-sm text-gray-500 mb-4">
-            指定した文字数のランダムIDを生成して空きを探します。
+            ランダムにIDを生成して、選択したプラットフォームで空きがあるものを探します。
           </p>
+
+          {/* プラットフォーム選択 */}
+          <div className="mb-4">
+            <div className="text-sm text-gray-600 mb-2">チェックするプラットフォーム</div>
+            <div className="flex flex-wrap gap-2">
+              {ALL_PLATFORMS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => togglePlatform(p)}
+                  className={`px-3 py-1.5 rounded-lg text-sm border transition ${
+                    selectedPlatforms.includes(p)
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-800'
+                      : 'bg-gray-50 border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {PLATFORM_LABELS[p]}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-4 mb-4">
             <div>
@@ -176,7 +216,9 @@ export default function Home() {
                 className="px-3 py-2 border rounded-lg"
               >
                 {[4, 5, 6, 7, 8].map((n) => (
-                  <option key={n} value={n}>{n}文字</option>
+                  <option key={n} value={n}>
+                    {n}文字
+                  </option>
                 ))}
               </select>
             </div>
@@ -187,15 +229,17 @@ export default function Home() {
                 onChange={(e) => setAutoCount(Number(e.target.value))}
                 className="px-3 py-2 border rounded-lg"
               >
-                {[5, 10, 20, 30, 40].map((n) => (
-                  <option key={n} value={n}>{n}回</option>
+                {[5, 10, 15, 20, 30].map((n) => (
+                  <option key={n} value={n}>
+                    {n}回
+                  </option>
                 ))}
               </select>
             </div>
             <div className="flex items-end">
               <button
                 onClick={runAutoFinder}
-                disabled={autoLoading}
+                disabled={autoLoading || selectedPlatforms.length === 0}
                 className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
                 {autoLoading ? `探索中... (${checkedCount})` : '空きを探す'}
@@ -203,27 +247,33 @@ export default function Home() {
             </div>
           </div>
 
-          {availableList.length > 0 && (
+          {foundList.length > 0 && (
             <div className="mt-4">
               <h3 className="font-medium text-green-700 mb-2">見つかった空きID</h3>
-              <div className="flex flex-wrap gap-2">
-                {availableList.map((id) => (
-                  <a
-                    key={id}
-                    href={`https://github.com/${id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 bg-green-50 text-green-800 rounded-lg border border-green-200 hover:bg-green-100"
+              <div className="space-y-2">
+                {foundList.map((item) => (
+                  <div
+                    key={item.username}
+                    className="flex flex-wrap items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl"
                   >
-                    {id}
-                  </a>
+                    <span className="font-mono font-semibold text-green-900">{item.username}</span>
+                    <span className="text-sm text-green-700">→</span>
+                    {item.availableOn.map((p) => (
+                      <span
+                        key={p}
+                        className="px-2 py-0.5 bg-white border border-green-300 rounded text-xs text-green-800"
+                      >
+                        {PLATFORM_LABELS[p]}
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
             </div>
           )}
 
-          {!autoLoading && checkedCount > 0 && availableList.length === 0 && (
-            <p className="text-gray-500 mt-3">今回は空きが見つかりませんでした。</p>
+          {!autoLoading && checkedCount > 0 && foundList.length === 0 && (
+            <p className="text-gray-500 mt-3">今回は空きが見つかりませんでした。文字数を増やすか、もう一度試してください。</p>
           )}
         </section>
 
